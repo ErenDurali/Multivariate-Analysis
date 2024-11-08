@@ -1,0 +1,749 @@
+---
+title: "Stat 467 project"
+output: html_document
+date: "2023-12-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(MVN)
+library(dplyr)
+library(corrplot)
+library(factoextra)
+library(psych)
+library(car)
+library(labeling)
+library(GGally)
+library(ICSNP)
+library(MASS)
+```
+
+```{r}
+set.seed(123)
+df1 = read.csv("C:/Users/Eren/Desktop/Stat 467/Spotify_Youtube.csv")
+df <- subset(df1[sample(nrow(df1), 2000), ],select = -c(Acousticness,Instrumentalness))
+df=na.omit(df)
+```
+
+```{r}
+ggplot(df, aes(x = Danceability)) +
+  geom_histogram(binwidth = 0.05, fill = "blue", color = "black") +
+  labs(title = "Distribution of Danceability", x = "Danceability", y = "Frequency")
+```
+
+```{r}
+ggplot(df, aes(x = Energy, y = Valence)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Energy vs. Valence", x = "Energy", y = "Valence")
+```
+
+```{r}
+# Example: Box plot of Danceability by Album Type
+ggplot(df, aes(x = Album_type, y = Danceability, fill = Album_type)) +
+  geom_boxplot() +
+  labs(title = "Box Plot of Danceability by Album Type", x = "Album Type", y = "Danceability")
+```
+
+```{r}
+ggplot(df, aes(x = Album_type, fill = Album_type)) +
+  geom_bar() +
+  labs(title = "Distribution of Album Types", x = "Album Type", y = "Count")
+```
+
+```{r}
+# Conduct normality check for danceab
+# You can replace 'Danceability' with the variable you want to check for normality
+
+# Q-Q plot for normality check
+qqnorm(df$Danceability)
+qqline(df$Danceability, col = 2)
+```
+
+```{r}
+# H0 : The data follows normal distribution.
+
+# H1 : The data does not follow normal distribution.
+df_numeric <- Filter(is.numeric,df)
+df_numeric <- na.omit(df_numeric)
+result <- mvn(data = df_numeric, mvnTest = "royston")
+result$multivariateNormality
+```
+
+# Since p value is less than alpha=0.05, we reject H0 and we can say that we don’t have enough evidence to prove that the data follow normal distribution.
+
+```{r}
+# create univariate Q-Q plots
+df_split=cbind(df_numeric$Danceability,df_numeric$Energy,df_numeric$Liveness,df_numeric$Valence)
+result <- mvn(data = df_split, mvnTest = "royston", univariatePlot = "qqplot")
+```
+
+```{r}
+# create univariate histograms
+result <- mvn(data = df_split, mvnTest = "royston", univariatePlot = "histogram", univariateTest = "SW" )
+```
+
+```{r}
+df_split <- as.data.frame(df_split)
+result <- mvn(data = df_split,mvnTest = "royston",multivariateOutlierMethod = "quan")
+```
+
+# ***Question 2 ***
+
+```{r}
+# Question is to check if means of Danceability and Valence are 0.7
+# H0=μ=μ0 vs  H1=μ≠μ0
+
+y <- df %>%  dplyr::select (Danceability,Valence)
+xbar <- colMeans(y)
+xbar
+```
+
+```{r}
+test <- mvn(y, mvnTest = "mardia")
+test$multivariateNormality
+```
+
+```{r}
+log_y <- log(y)
+log_y[log_y == -Inf] <- NA
+test<-mvn(log_y,mvnTest = "mardia")
+test$univariateNormality # no normality
+```
+
+```{r}
+mu_0 <- c(0.7,0.7)
+HotellingsT2(y,mu=mu_0)
+```
+
+#***Since p<alpha=0.05, we reject H0. Therefore, we do not have enough evidence to conclude that mean vector equals (0.7,0.7)***
+
+# ***Q3***
+
+# Assuming 'Album_type' is your grouping variable
+# Example data frame structure: data.frame(Album_type, Danceability, Energy, Liveness, Valence)
+
+```{r}
+# MANOVA
+manova_results <- manova(cbind(Danceability, Energy, Liveness, Valence) ~ Album_type, data = df)
+summary(manova_results)
+```
+
+```{r}
+summary.aov(manova_results)
+```
+
+#***These results suggest that Album_type has a significant impact on Danceability and Energy, but not on Liveness and Valence.***
+
+```{r}
+df_numeric <- select_if(df,is.numeric)
+df_numeric = na.omit(df_numeric)
+str(df_numeric)
+dim(df_numeric)
+df_pca <- dplyr:: select(df, c("Danceability", "Valence", "Energy", "Liveness"))
+# scatter plot for correlation test to use for pca
+scatterplotMatrix(df_pca, diagonal = "histogram")
+```
+
+```{r}
+library(corrplot)
+
+
+# correlation of our variables and corrplot
+res <- cor(df_pca,method = "pearson")
+corrplot(res, method= "color", order = "hclust")
+```
+
+#***#When we look at the first plot (including both density and scatter plots) ***
+#  ***#we observe that the scale of the variables are different, and this can cause a problem in PCA.***
+  
+```{r}
+df_pca <- scale(df_pca)
+df_pca
+```
+
+```{r}
+# correlation of scaled data set
+cor(df_pca)
+```
+
+```{r}
+# we put a side base total that we can conduct pca
+df_pca_1 <- df_pca[,-2]
+# pca with prcomp function and summary
+pca1 <- prcomp(df_pca_1)
+summary(pca1)
+```
+
+```{r}
+# rotation of pca
+pca1$rotation
+```
+
+```{r}
+fviz_eig(pca1,addlabels = TRUE)#error
+```
+
+```{r}
+# We extract first two components and continue our analysis with them
+pca <- pca1$x[,1:2]
+# we check that our components are linear independent
+res1 <- cor(pca, method = "pearson")
+corrplot(res1, method= "color", order = "hclust")
+```
+
+```{r}
+#interpretation of pca from correlation
+cor(df_pca, pca)
+```
+
+```{r}
+# principal component regression analysis 
+
+
+ols.data <- data.frame(base_total = df_pca[,2],pca)
+
+lmodel <- lm(base_total ~ ., data = ols.data)
+
+summary(lmodel)
+```
+
+```{r}
+library(tidyverse)
+```
+
+-- First load the data and take a quick look --
+
+```{r}
+df <- read.csv("C:/Users/Eren/Desktop/Stat 467/Spotify_Youtube.csv")
+df <- subset(df[sample(nrow(df), 2000), ],select = -c(Acousticness,Instrumentalness))
+df_numeric <- Filter(is.numeric,df)
+df_numeric <- na.omit(df_numeric)
+df_split=cbind(df_numeric$Danceability,df_numeric$Energy,df_numeric$Liveness,df_numeric$Valence)
+colSums(is.na(df))
+df <- na.omit(df)
+head(df)
+```
+
+-- Description is an unnecessary column --
+
+```{r}
+df$Description <- NULL
+head(df)
+```
+
+-- Lets summarize data for taking a look at all variables --
+
+```{r}
+summary(df)
+```
+
+-- Lets visualized for making a close look --
+
+```{r}
+library(ggplot2)
+album <- ggplot(df, aes(x = Album_type, alpha = Album_type))
+album <- album + geom_bar(fill = "blue")
+album + labs(title = "Distribution of Album Types", x = "Album Type", y = "Count") +
+  scale_alpha_manual(values = c(0.8, 0.2, 0.5))
+```
+
+-- It looks like albums are more common -- -- Lets look at the continuous variables and their interactions -- -- I think we need to look at song related think and popularity think separate --
+
+```{r}
+library(corrplot)
+cont <- sapply(df, is.numeric)
+cont_data <- df[, cont]
+cont_data$X <- NULL
+songr <- cont_data[,0:9]
+correlation1 <- cor(songr)
+corrplot(correlation1, method = "color")
+```
+
+-- Looks like Loudness and Energy have a great positive correlation -- -- Acousticness and Energy have a negative correlation between them -- -- Valence and Danceability has something but is it important we need to find out --
+
+```{r}
+popr <- cont_data[,10:13]
+correlation2 <- cor(popr)
+corrplot(correlation2, method = "color")
+```
+
+-- Views and Likes has a really strong relationship -- -- Views and Likes will be dependent variables for us --
+
+```{r}
+dep <- popr[,0:2]
+cor(dep)
+```
+
+```{r}
+library(MVN)
+result_mvn <- mvn(dep, univariateTest = "AD", univariatePlot = "histogram", bc = T)
+result_mvn$univariateNormality
+```
+
+
+```{r}
+library(bestNormalize)
+normal_dep <- dep
+normalized_likes <- bestNormalize(dep$Likes, allow_lambert_s = T)
+normalized_likes <- predict(normalized_likes)
+normal_dep$Likes <- normalized_likes
+normalized_views <- bestNormalize(dep$Views, allow_lambert_s = T)
+normalized_views <- predict(normalized_views)
+normal_dep$Views <- normalized_views
+normal_dep_scale <- scale(normal_dep)
+result_mvn <- mvn(normal_dep_scale, univariateTest = "AD", univariatePlot = "histogram")
+result_mvn$univariateNormality
+```
+
+```{r}
+result_mvn1 <- mvn(normal_dep_scale, mvnTest = "hz",multivariatePlot = "qq")
+result_mvn1$multivariateNormality
+```
+
+##### We could not normalize our data but we will assume that our data follow multivariate normal
+
+```{r}
+library(psych)
+# first scaled data because factor analysis sensitive for different scales
+normal_dep_scale <- as.data.frame(normal_dep_scale)
+spotify <- songr
+spotify <- spotify[,-3]
+spotify_scaled <- scale(spotify)
+spotify_scaled <- cbind(normal_dep_scale,spotify)
+spotify_scaled <- as.data.frame(spotify_scaled)
+```
+
+```{r}
+factor_analysis1 <- fa(spotify_scaled[, c("Views", "Likes")], rotate = "varimax",nfactors = 1)
+summary(factor_analysis1)
+```
+
+##### This summary shows that. The df for model is -1 and objective function was 0 so this shows good fit for model. Chi-square = 0 means that model fits the data well. The root means square (RMSA) is 0 too it shows perfect fit this means that model could use the spotify_scaled data to explain observed variance without any residuals. The Tucker Lewis is 1 it shows high reliability.
+
+```{r}
+factor_analysis1$loadings
+```
+
+##### 0.952 in MR1 shows that the variance of "Views" and "Likes" can be explained by the common factor. This factor_analysis shows that a single underlaying factor is strongly related with our response variables "Views" and "Likes".
+
+```{r}
+factor_analysis2 <- fa(spotify_scaled[, c("Views", "Likes")], rotate = "promax",nfactors = 1)
+summary(factor_analysis2)
+```
+
+```{r}
+factor_analysis2$loadings
+```
+
+##### same for both rotation I will use "varimax" which means orthogonal because it is more simple
+
+```{r}
+factor_analysis_all <- factanal(spotify_scaled, rotation = "varimax",factors = 1)
+print(factor_analysis_all)
+```
+
+##### Since my primary focus is "Views" and "Likes" and 1 factor model for specificly "Views" and "Likes" gaves more information about my focus I will use that model.
+
+```{r}
+subset_ind <- subset(spotify_scaled[,3:10])
+subset_res <- subset(spotify_scaled[,1:2])
+kmeans_res <- kmeans(subset_res, centers = 2, nstart = 25)
+subset_res_c <- kmeans_res$cluster
+print(table(subset_res_c))
+```
+
+```{r}
+library(MASS)
+subset_all <- cbind(subset_ind, Cluster = subset_res_c)
+lda_all <- lda(Cluster ~ . , data = subset_all)
+summary(lda_all)
+```
+
+## Factor analysis
+
+```{r}
+dim(spotify_scaled)
+cm <- cor(spotify_scaled, method="pearson")
+corrplot::corrplot(cm, method= "number", order = "hclust")
+```
+
+```{r}
+KMO(r=cm)
+```
+
+##### Since MSA bigger than 0.5 we can run Factor analysis.
+
+```{r}
+print(cortest.bartlett(cm,nrow(spotify_scaled)))
+```
+
+##### The Chi-square is 5724.413 with 45 degrees of freedom, which is significant. Also The KMO statistic 0.56 is larger than 0.5. Thus Factor Analysis is an appropriate technique.
+
+```{r}
+parallel <- fa.parallel(spotify_scaled, fm = "minres", fa = "fa")
+```
+
+##### We can see to the graph 4 is the elbow point so we use 4 factors. Hence we have 10 dimension we can't use more than 5 factor in factanal function.
+
+```{r}
+factor_analysis <- factanal(spotify_scaled, factors = 4)
+factor_analysis
+```
+
+##### Since p values less than 0.05, we reject H0. All other values are less than 0.05 too
+
+##### The first factor dominated from Views and Likes but mostly likes and the second factor Danceablity, third fator Energy, and fourth factor Speechiness
+
+##### About Variances factors explains %18.3,%17.8,%12.4,%10.2, respectively. And totally %58.7 of the variance explained by 4 factors
+
+```{r}
+load <- factor_analysis$loadings[,1:2]
+plot(load,type="n")
+text(load,labels=names(spotify_scaled),cex=.7)
+load <- factor_analysis$loadings[,3:4]
+plot(load,type="n")
+text(load,labels=names(spotify_scaled),cex=.7)
+```
+
+##### as we can explain above first factor dominated by Likes and Views, second factor dominated by Danceability, and goes like that you can see.
+
+```{r}
+names(factor_analysis$loadings[,1])[abs(factor_analysis$loadings[,1])>0.4]
+names(factor_analysis$loadings[,2])[abs(factor_analysis$loadings[,2])>0.4]
+names(factor_analysis$loadings[,3])[abs(factor_analysis$loadings[,3])>0.4]
+names(factor_analysis$loadings[,4])[abs(factor_analysis$loadings[,4])>0.4]
+```
+
+```{r}
+factor_analysis1 <- spotify_scaled[,names(factor_analysis$loadings[,1])[abs(factor_analysis$loadings[,1])>0.4]]
+summary(alpha(factor_analysis1, check.keys=TRUE))
+```
+
+```{r}
+factor_analysis2 <- spotify_scaled[,names(factor_analysis$loadings[,2])[abs(factor_analysis$loadings[,2])>0.4]]
+summary(alpha(factor_analysis2, check.keys=TRUE))
+```
+
+
+##### We can't do Cronbrach's alpha for factor 3 and  factor 4 because they have only one variable. Since this test measure internal consistency.
+
+##### first raw alpha is very high so it looks very promising. second one is 0.85 so pretty good.
+
+```{r}
+scores<-factanal(spotify_scaled, factors = 4,scores="regression")$scores
+head(scores)
+```
+
+```{r}
+cm1 <- cor(scores, method="pearson")
+corrplot::corrplot(cm1, method= "number", order = "hclust")
+```
+
+##### as you see they are nearly uncorrelated from each other. That guarentees no multicollinearity.
+
+## Discrimination
+
+```{r}
+library(MASS)
+library(klaR)
+library(ggplot2)
+library(GGally)
+library(mlbench)
+```
+
+```{r}
+options(repos = c(
+    fawda123 = 'https://fawda123.r-universe.dev',
+    CRAN = 'https://cloud.r-project.org'))
+
+# Install ggord
+install.packages('ggord')
+library(ggord)
+```
+
+##### We will look for album types "album", "compilation", "single".
+
+```{r}
+spotify_scaled$album_type <- as.factor(df[,"Album_type"])
+GGally::ggpairs(spotify_scaled)
+```
+
+##### Almost all variable in the data does not follow normal distribution but we will still try default linear discrimination function
+
+```{r}
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(spotify_scaled), replace=TRUE, prob=c(0.8,0.2))
+train <- spotify_scaled[sample, ]
+test <- spotify_scaled[!sample, ] 
+```
+
+```{r}
+library(MASS)
+model_lda <- lda(album_type ~ .,data = train)
+model_lda
+```
+
+##### The LDA output shows that 72.4% of the training observations corresponds to album , 3.6% compilation and 23.9% single.
+
+```{r}
+model_pre <- predict(model_lda, train)
+ldahist(data = model_pre$x[,1], g = train$album_type)
+```
+
+##### we have overlaps between 3 album types for LD1
+
+```{r}
+ldahist(data = model_pre$x[,2], g = train$album_type)
+```
+
+##### this is all overlapped too. not good.
+
+```{r}
+ggord(model_lda, train$album_type, ylim = c(-10, 10))
+```
+##### it is a total mess I can't see anything. All the data overlapped.
+
+```{r}
+#partimat(album_type~., data = train, method = "lda")
+```
+
+##### I tried some par functions but It is not fitting.
+
+```{r}
+model_pre1 <- predict(model_lda, train)$class
+tab <- table(Predicted = model_pre1, Actual = train$album_type)
+tab
+```
+##### total correct classification is 1056+1+24=1081
+
+```{r}
+sum(diag(tab))/sum(tab)
+```
+
+###### The accuracy of the model is 72.1%. It is not enough. The classification error rate is 1-0.72= 0.28
+```{r}
+model_pre2 <- predict(model_lda, test)$class
+tab1 <- table(Predicted = model_pre2, Actual = test$album_type)
+tab1
+```
+
+```{r}
+sum(diag(tab1))/sum(tab1)
+```
+##### The accuracy of model is around 68.1%. So the models corretly classifies songs by album types with 68.1% for the test data.
+
+## Clustering 
+
+##### This will be unstandardized one
+```{r}
+set.seed(123)
+rows <- sample(1:1884, 20)
+spotify1 <- spotify_scaled
+spotify1$album_type <- as.factor(df$Album_type)
+cluster_sample <- spotify1[rows, ]
+dm <- dist(cluster_sample[, c("Views","Likes")])
+dm
+```
+
+```{r}
+par(mfrow=c(2,2),mar=c(1,2,1,2))
+plot(cs <- hclust(dm, method = "single"),main = "Single Linkage")
+plot(cc <- hclust(dm, method = "complete"),main = "Complete Linkage")
+plot(ca <- hclust(dm, method = "average"),main = "Average Linkage")
+plot(cw <- hclust(dm, method = "ward.D2"),main = "Ward Method")
+```
+
+##### 11423 was like an outlier in 3 methods but in ward method it is not looking an outlier completely
+
+```{r}
+par(mfrow=c(1,1))
+```
+
+```{r}
+set.seed(123)
+rows <- sample(1:1883, 20)
+cluster_sample1 <- spotify1[rows, ]
+X <- scale(cluster_sample1[, c("Views", "Likes")], center = FALSE, scale = TRUE)
+dj <- dist(X)
+plot(cc <- hclust(dj), main = "Spotify clustering")
+```
+
+```{r}
+cc
+```
+
+##### The resulting dendrogram strongly suggest the presence of multiple (a lot) groups.
+
+```{r}
+library(cluster)
+library(factoextra)
+cluster_diana <- diana(cluster_sample[, c("Views", "Likes")], stand = TRUE)
+fviz_dend(cluster_diana, cex = 0.5,
+          k = 2, 
+          palette = 
+          )
+```
+
+### Kmeans clustering 
+
+```{r}
+library(car)
+scatterplotMatrix(spotify_scaled)
+```
+
+```{r}
+spotify_scaled$album_type <- as.numeric(factor(spotify_scaled$album_type, levels = c("album", "single", "compilation")))
+sapply(spotify_scaled, var)
+```
+
+##### since we scaled the data and variances are similar we can apply clustering. 
+
+```{r}
+n <- nrow(spotify_scaled)
+wss <- rep(0, 6)
+wss[1] <- (n - 1) * sum(sapply(spotify_scaled, var))
+for (i in 2:6)
+  wss[i] <- sum(kmeans(spotify_scaled,centers = i)$withinss)
+
+plot(1:6, wss, type = "b", xlab = "Number of groups", ylab = "Within groups sum of squares")
+```
+
+##### 2 is the elbow points 
+
+```{r}
+rge <- sapply(spotify_scaled, function(x) diff(range(x)))
+```
+
+
+```{r}
+kmeans(spotify_scaled, centers = 2)$centers * rge
+```
+
+```{r}
+kmeans(spotify_scaled, centers = 2)$cluster
+```
+
+##### We try a lot of clustering method for our data
+
+```{r}
+set.seed(123)
+rows <- sample(1:1876, 11)
+cluster_sample2 <- spotify_scaled[rows, ]
+spotify_mds <- cmdscale(cluster_sample2, k = 5, eig = TRUE)
+```
+
+```{r}
+spotify_mds$eig
+```
+
+```{r}
+cumsum(abs(spotify_mds$eig))/sum(abs(spotify_mds$eig))
+```
+
+```{r}
+cumsum((spotify_mds$eig)^2)/sum((spotify_mds$eig)^2)
+```
+
+```{r}
+x <- spotify_mds$points[,1]
+y <- spotify_mds$points[,2]
+plot(x, y, xlab = "Coordinate 1", ylab = "Coordinate 2", xlim = range(x)*1.2, type = "n")
+text(x, y, labels = colnames(spotify), cex = 0.7)
+``` 
+
+## Canonical Correlation Analysis
+
+```{r}
+set.seed(123)
+library(CCA)
+library(tidyverse)
+require(ggplot2)
+require(GGally)
+require(CCA)
+require(CCP)
+xtabs(~album_type,data = spotify_scaled)
+X <- spotify_scaled [,1:2]
+Y <- spotify_scaled [,3:11]
+ggpairs(X)
+```
+```{r}
+ggpairs(Y)
+```
+##### "album" = 0, "single" = 1 "compilation" = 2
+
+```{r}
+matcor(X,Y)
+```
+
+```{r}
+cc_a <- cc(X, Y)
+cc_a$cor
+```
+
+```{r}
+
+cc_a[3:4]
+```
+
+##### This shows the coefficients like one unit increase in the loudness causes to a 0.952 decrease in the dimension 1 for the popularity set (Views and Likes). Another think you can see in the dimension 1 speechiness is almost has no effect in the model. The other values are as you can see.
+
+```{r}
+cc_b <- comput(X, Y, cc_a)
+cc_b [3:6]
+```
+
+```{r}
+rho_cca <- cc_a$cor
+n <- dim(X)[1]
+p <- length(X)
+q <- length(Y)
+p.asym(rho_cca, n, p, q, tstat = "Wilks")
+```
+##### first test show that all two dimensions are significant (F = 5.38), And 2 to 2 shows that is dimension 2 significant by itself it shows that (F=3.98) is less than alpha = 0.05 so this is also significant.
+
+```{r}
+p.asym(rho_cca, n, p, q, tstat = "Hotelling")
+```
+
+```{r}
+p.asym(rho_cca, n, p, q, tstat = "Pillai")
+```
+
+```{r}
+p.asym(rho_cca, n, p, q, tstat = "Roy")
+```
+
+```{r}
+s1 <- diag(sqrt(diag(cov(X))))
+s1 %*% cc_a$xcoef
+```
+```{r}
+s2 <- diag(sqrt(diag(cov(Y))))
+s2 %*% cc_a$ycoef
+```
+##### my data was already standardized so it didn't change.
+
+```{r}
+p.asym(rho_cca, n, p, q, tstat = "Wilks")
+print(cc_a$xcoef)
+print(cc_a$ycoef)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
